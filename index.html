@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AR Poster (Green Screen)</title>
+
+    <!-- Import Map: Defines where to load the modules from -->
+    <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.147.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.147.0/examples/jsm/",
+        "mindar-image-three": "https://cdn.jsdelivr.net/npm/mind-ar@1.2.2/dist/mindar-image-three.prod.js"
+      }
+    }
+    </script>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: sans-serif;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        #container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Overlay Styles */
+        #loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 999;
+            text-align: center;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* Spinner Animation */
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3eec1c;
+            /* Matches your green screen color */
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        #error-message {
+            color: #ff6b6b;
+            margin-top: 10px;
+            max-width: 80%;
+        }
+
+        /* Start Button (Required for iOS audio/video permissions sometimes) */
+        #start-btn {
+            margin-top: 20px;
+            padding: 10px 20px;
+            background: #3eec1c;
+            color: black;
+            border: none;
+            border-radius: 5px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 16px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div id="container"></div>
+
+    <div id="loading-overlay">
+        <div class="spinner" id="spinner"></div>
+        <h2 id="status-text" style="margin-top: 20px;">Initializing AR...</h2>
+        <p>Scanning for Green Screen (#3eec1c)</p>
+        <button id="start-btn" class="hidden">Start AR Experience</button>
+        <p id="error-message"></p>
+    </div>
+
+    <!-- Main Logic as a Module -->
+    <script type="module">
+        import * as THREE from 'three';
+        import { MindARThree } from 'mindar-image-three';
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const container = document.querySelector('#container');
+            const overlay = document.querySelector('#loading-overlay');
+            const statusText = document.querySelector('#status-text');
+            const spinner = document.querySelector('#spinner');
+            const errorMsg = document.querySelector('#error-message');
+            const startBtn = document.querySelector('#start-btn');
+
+            let mindarThree = null;
+
+            const startAR = async () => {
+                try {
+                    // 1. Initialize MindAR
+                    // Using the imported class directly, not window.MINDAR
+                    mindarThree = new MindARThree({
+                        container: container,
+                        imageTargetSrc: './assets/targets.mind', // Make sure this path is correct
+                        filterMinCF: 0.0001,
+                        filterBeta: 0.001,
+                    });
+
+                    const { renderer, scene, camera } = mindarThree;
+
+                    // 2. Setup Video
+                    const video = document.createElement('video');
+                    video.src = './assets/poster_animation.webm'; // Make sure this path is correct
+                    video.crossOrigin = 'anonymous';
+                    video.loop = true;
+                    video.muted = true; // Start muted to allow autoplay
+                    video.playsInline = true;
+                    video.load();
+
+                    // 3. Create Video Texture
+                    const videoTexture = new THREE.VideoTexture(video);
+                    videoTexture.minFilter = THREE.LinearFilter;
+                    videoTexture.magFilter = THREE.LinearFilter;
+                    videoTexture.format = THREE.RGBAFormat; // Use RGBA for transparency if shader needs it
+
+                    // 4. Chroma Key Shader (#3eec1c)
+                    const chromaKeyShader = {
+                        uniforms: {
+                            textureMap: { value: videoTexture },
+                            keyColor: { value: new THREE.Color("#3eec1c") }, // Your green color
+                            similarity: { value: 0.4 },
+                            smoothness: { value: 0.1 },
+                        },
+                        vertexShader: `
+                            varying vec2 vUv;
+                            void main() {
+                                vUv = uv;
+                                gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+                            }
+                        `,
+                        fragmentShader: `
+                            uniform sampler2D textureMap;
+                            uniform vec3 keyColor;
+                            uniform float similarity;
+                            uniform float smoothness;
+                            varying vec2 vUv;
+
+                            void main() {
+                                vec4 videoColor = texture2D(textureMap, vUv);
+                                float d = length(videoColor.rgb - keyColor);
+                                float alpha = smoothstep(similarity, similarity + smoothness, d);
+                                // Invert alpha because we want to HIDE the match
+                                gl_FragColor = vec4(videoColor.rgb, videoColor.a * alpha);
+                            }
+                        `,
+                        transparent: true,
+                        side: THREE.FrontSide
+                    };
+
+                    const material = new THREE.ShaderMaterial(chromaKeyShader);
+
+                    // 5. Create Mesh (1:1.4 aspect ratio)
+                    const geometry = new THREE.PlaneGeometry(1, 1.4);
+                    const plane = new THREE.Mesh(geometry, material);
+
+                    // 6. Anchor Setup
+                    const anchor = mindarThree.addAnchor(0);
+                    anchor.group.add(plane);
+
+                    anchor.onTargetFound = () => {
+                        console.log("Target Found");
+                        video.play();
+                    };
+
+                    anchor.onTargetLost = () => {
+                        console.log("Target Lost");
+                        video.pause();
+                    };
+
+                    // 7. Start Engine
+                    statusText.innerText = "Starting Camera...";
+                    await mindarThree.start();
+
+                    renderer.setAnimationLoop(() => {
+                        renderer.render(scene, camera);
+                    });
+
+                    // Hide overlay on success
+                    overlay.classList.add('hidden');
+
+                } catch (err) {
+                    console.error(err);
+                    spinner.classList.add('hidden');
+                    statusText.innerText = "Error";
+                    errorMsg.innerText = err.message || "Failed to start AR";
+
+                    // Special handling for user gesture requirements
+                    if (err.name === 'NotAllowedError' || err.name === 'NotFoundError') {
+                        errorMsg.innerText = "Camera access denied or no camera found.";
+                    }
+                }
+            };
+
+            // Modern browsers often require a button click to start video/audio contexts
+            // or to access camera if not served over HTTPS.
+            startAR();
+        });
+    </script>
+</body>
+
+</html>
