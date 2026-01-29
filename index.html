@@ -131,8 +131,8 @@
                     mindarThree = new MindARThree({
                         container: container,
                         imageTargetSrc: './assets/targets.mind', // Make sure this path is correct
-                        filterMinCF: 0.0001,
-                        filterBeta: 0.001,
+                        filterMinCF: 0.1,
+                        filterBeta: 10,
                     });
 
                     const { renderer, scene, camera } = mindarThree;
@@ -192,6 +192,9 @@
                     const geometry = new THREE.PlaneGeometry(1, 1.4);
                     const plane = new THREE.Mesh(geometry, material);
 
+                    // Ensure Z-position is exactly 0 to sit on the poster
+                    plane.position.z = 0;
+
                     // 6. Anchor Setup
                     const anchor = mindarThree.addAnchor(0);
                     anchor.group.add(plane);
@@ -221,7 +224,7 @@
                     console.error(err);
                     spinner.classList.add('hidden');
                     statusText.innerText = "Error";
-                    errorMsg.innerText = err.message || "Failed to start AR";
+                    errorMsg.innerText = err.message || "Failed to start Magic";
 
                     // Special handling for user gesture requirements
                     if (err.name === 'NotAllowedError' || err.name === 'NotFoundError') {
@@ -239,3 +242,4 @@
 
 
 </html>
+
