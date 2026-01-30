@@ -17,23 +17,6 @@
     }
     </script>
 
-    <!-- PWA Manifest & Meta -->
-    <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#3eec1c">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-
-    <!-- Service Worker Registration -->
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('./service-worker.js')
-                    .then((reg) => console.log('Service Worker: Registered (Scope: ' + reg.scope + ')'))
-                    .catch((err) => console.log('Service Worker: Error: ', err));
-            });
-        }
-    </script>
-
     <style>
         body {
             margin: 0;
@@ -121,7 +104,7 @@
     <div id="loading-overlay">
         <div class="spinner" id="spinner"></div>
         <h2 id="status-text" style="margin-top: 20px;">Initializing the Magic...</h2>
-        <p>Scanning for <strong>ITIHA Poster</strong></p>
+        <p>Scanning for <strong>Itiha</strong> Poster</p>
         <button id="start-btn" class="hidden">Start the Magic</button>
         <p id="error-message"></p>
     </div>
@@ -224,7 +207,7 @@
                     };
 
                     // 7. Start Engine
-                    statusText.innerText = "Wait for the Magic...";
+                    statusText.innerText = "Starting The Magic...";
                     await mindarThree.start();
 
                     renderer.setAnimationLoop(() => {
