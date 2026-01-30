@@ -111,12 +111,56 @@
             cursor: pointer;
             font-size: 16px;
         }
+
+        #record-btn {
+            position: absolute;
+            bottom: 30px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 70px;
+            height: 70px;
+            background-color: rgba(255, 0, 0, 0.8);
+            border: 5px solid white;
+            border-radius: 50%;
+            cursor: pointer;
+            z-index: 1000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: all 0.3s ease;
+        }
+
+        #record-btn:active {
+            transform: translateX(-50%) scale(0.9);
+        }
+
+        #record-btn.recording {
+            border-radius: 10px;
+            background-color: rgba(255, 0, 0, 1);
+            transform: translateX(-50%) scale(0.9);
+            animation: pulse-red 2s infinite;
+        }
+
+        @keyframes pulse-red {
+            0% {
+                box-shadow: 0 0 0 0 rgba(255, 0, 0, 0.7);
+            }
+
+            70% {
+                box-shadow: 0 0 0 20px rgba(255, 0, 0, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(255, 0, 0, 0);
+            }
+        }
     </style>
 </head>
 
 <body>
 
     <div id="container"></div>
+    <div id="record-btn" class="hidden"></div>
 
     <div id="loading-overlay">
         <div class="spinner" id="spinner"></div>
@@ -272,8 +316,120 @@
                 document.removeEventListener('click', enableImmersiveMode);
                 document.removeEventListener('touchstart', enableImmersiveMode);
             };
+            const recordBtn = document.querySelector('#record-btn');
+            let mediaRecorder;
+            let recordedChunks = [];
+            let isRecording = false;
+
             document.addEventListener('click', enableImmersiveMode);
             document.addEventListener('touchstart', enableImmersiveMode);
+
+            // Recording Logic
+            const toggleRecording = async () => {
+                if (!isRecording) {
+                    startRecording();
+                } else {
+                    stopRecording();
+                }
+            };
+
+            const startRecording = () => {
+                try {
+                    const canvas = renderer.domElement;
+                    const stream = canvas.captureStream(30); // 30 FPS
+
+                    // Try to get audio from microphone
+                    navigator.mediaDevices.getUserMedia({ audio: true }).then(audioStream => {
+                        stream.addTrack(audioStream.getAudioTracks()[0]);
+                        initMediaRecorder(stream);
+                    }).catch(err => {
+                        console.warn("Microphone access denied or failed, recording video only.", err);
+                        initMediaRecorder(stream);
+                    });
+
+                } catch (e) {
+                    console.error("Failed to start recording", e);
+                    alert("Recording failed to start.");
+                }
+            };
+
+            let recordedMimeType = 'video/webm';
+
+            const initMediaRecorder = (stream) => {
+                const mimeTypes = [
+                    'video/mp4',
+                    'video/webm;codecs=vp9',
+                    'video/webm'
+                ];
+
+                let selectedMimeType = mimeTypes.find(type => MediaRecorder.isTypeSupported(type));
+
+                if (!selectedMimeType) {
+                    console.warn("No supported mime type found, letting browser decide.");
+                    selectedMimeType = ''; // Let browser pick default
+                }
+
+                recordedMimeType = selectedMimeType;
+                console.log("Recording with mimeType:", recordedMimeType);
+
+                const options = selectedMimeType ? { mimeType: selectedMimeType } : {};
+                mediaRecorder = new MediaRecorder(stream, options);
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        recordedChunks.push(event.data);
+                    }
+                };
+
+                mediaRecorder.onstop = saveVideo;
+
+                mediaRecorder.start();
+                isRecording = true;
+                recordBtn.classList.add('recording');
+                console.log("Recording started");
+            };
+
+            const stopRecording = () => {
+                if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                    mediaRecorder.stop();
+                    isRecording = false;
+                    recordBtn.classList.remove('recording');
+                    console.log("Recording stopped");
+                }
+            };
+
+            const saveVideo = () => {
+                const blob = new Blob(recordedChunks, { type: recordedMimeType || 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                document.body.appendChild(a);
+                a.style = 'display: none';
+                a.href = url;
+
+                // Determine extension
+                const ext = (recordedMimeType && recordedMimeType.includes('mp4')) ? 'mp4' : 'webm';
+                a.download = `ar-magic-moment.${ext}`;
+
+                a.click();
+                window.URL.revokeObjectURL(url);
+                recordedChunks = [];
+            };
+
+            recordBtn.addEventListener('click', (e) => {
+                e.stopPropagation(); // Prevent fullscreen toggle on button click if overlapping
+                toggleRecording();
+            });
+            recordBtn.addEventListener('touchstart', (e) => {
+                e.stopPropagation();
+                toggleRecording();
+            });
+
+            // Show record button once AR starts
+            const originalStart = mindarThree.start;
+            mindarThree.start = async () => {
+                await originalStart.call(mindarThree);
+                recordBtn.classList.remove('hidden');
+            };
 
             startAR();
         });
